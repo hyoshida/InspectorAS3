@@ -8,12 +8,15 @@ import flash.events.MouseEvent;
 import flash.geom.Point;
 import flash.ui.Mouse;
 import flash.ui.MouseCursor;
+import flash.utils.describeType;
 
 import mx.controls.Label;
 import mx.core.UIComponent;
 
+import spark.components.CheckBox;
 import spark.components.HGroup;
 import spark.components.RichEditableText;
+import spark.components.Scroller;
 import spark.components.VGroup;
 import spark.events.TextOperationEvent;
 import spark.skins.spark.FocusSkin;
@@ -32,6 +35,7 @@ public class InspectorAS3 extends UIComponent {
   private var _yInputField:RichEditableText;
   private var _widthInputField:RichEditableText;
   private var _heightInputField:RichEditableText;
+  private var _checkDetail:CheckBox;
   private var _previousMouseX:int;
   private var _previousMouseY:int;
   private var _spinnableTarget:DisplayObject;
@@ -40,6 +44,15 @@ public class InspectorAS3 extends UIComponent {
   private var _shiftKey:Boolean;
   private var _target:DisplayObject;
   private var _border:Sprite;
+  private var _targetProperties:Object;
+
+  public static function toggle(parent:DisplayObjectContainer):void {
+    if (instance) {
+      destroy();
+    } else {
+      create(parent);
+    }
+  }
 
   public static function create(parent:DisplayObjectContainer):void {
     if (instance) {
@@ -81,6 +94,7 @@ public class InspectorAS3 extends UIComponent {
     drawTargetBorder();
 
     refresh();
+    recreatePropertyGroup();
 
     if (_target) {
       _target.addEventListener(Event.REMOVED_FROM_STAGE, function(event:Event):void {
@@ -99,6 +113,7 @@ public class InspectorAS3 extends UIComponent {
     createNameInputField();
     createPositionGroup();
     createSizeGroup();
+    createDetailCheck();
 
     addEventListener(Event.ADDED_TO_STAGE, onAddedToStage);
     addEventListener(Event.REMOVED_FROM_STAGE, onRemovedFromStage);
@@ -115,19 +130,20 @@ public class InspectorAS3 extends UIComponent {
     _yInputField.text = targetOrObject.y;
     _widthInputField.text = targetOrObject.width;
     _heightInputField.text = targetOrObject.height;
-    refreshBorder();
+    refreshTargetBorder();
   }
 
   public function refreshFromInput():void {
     if (!target) {
       return;
     }
+
     target.name = _nameInputField.text;
     target.x = Number(_xInputField.text);
     target.y = Number(_yInputField.text);
     target.width = Number(_widthInputField.text);
     target.height = Number(_heightInputField.text);
-    refreshBorder();
+    refreshTargetBorder();
   }
 
   private function initializeProperties():void {
@@ -153,7 +169,7 @@ public class InspectorAS3 extends UIComponent {
   }
 
   private function createNameInputField():void {
-    var inputField:RichEditableText = buildInputField();
+    var inputField:RichEditableText = buildInputField("name");
     inputField.width = width - (PADDING * 2);
     inputField.height = LINE_HEIGHT;
     _container.addElement(inputField);
@@ -167,7 +183,7 @@ public class InspectorAS3 extends UIComponent {
     group.height = LINE_HEIGHT;
     _container.addElement(group);
 
-    var xInputField:RichEditableText = buildInputField();
+    var xInputField:RichEditableText = buildInputField("x");
     var xLabel:Label = buildSpinnableLabel(xInputField);
     xLabel.text = "x:";
     xLabel.percentWidth = 25;
@@ -180,7 +196,7 @@ public class InspectorAS3 extends UIComponent {
 
     _xInputField = xInputField;
 
-    var yInputField:RichEditableText = buildInputField();
+    var yInputField:RichEditableText = buildInputField("y");
     var yLabel:Label = buildSpinnableLabel(yInputField);
     yLabel.text = "y:";
     yLabel.percentWidth = 25;
@@ -200,7 +216,7 @@ public class InspectorAS3 extends UIComponent {
     group.height = LINE_HEIGHT;
     _container.addElement(group);
 
-    var widthInputField:RichEditableText = buildInputField();
+    var widthInputField:RichEditableText = buildInputField("width");
     var widthLabel:Label = buildSpinnableLabel(widthInputField);
     widthLabel.text = "width:";
     widthLabel.percentWidth = 25;
@@ -213,7 +229,7 @@ public class InspectorAS3 extends UIComponent {
 
     _widthInputField = widthInputField;
 
-    var heightInputField:RichEditableText = buildInputField();
+    var heightInputField:RichEditableText = buildInputField("height");
     var heightLabel:Label = buildSpinnableLabel(heightInputField);
     heightLabel.text = "height:";
     heightLabel.percentWidth = 25;
@@ -227,6 +243,65 @@ public class InspectorAS3 extends UIComponent {
     _heightInputField = heightInputField;
   }
 
+  private function createDetailCheck():void {
+    var check:CheckBox = new CheckBox;
+    check.label = "Show all properties";
+    _container.addElement(check);
+
+    _checkDetail = check;
+  }
+
+  private function createPropertyGroup():void {
+    if (!target || !_checkDetail.selected) {
+      return;
+    }
+
+    _targetProperties = {};
+
+    var scroller:Scroller = new Scroller;
+    scroller.name = "PropertyGroup";
+    scroller.percentWidth = 100;
+    scroller.percentHeight = 100;
+    _container.addElement(scroller);
+
+    var group:VGroup = new VGroup;
+    scroller.viewport = group;
+
+    for each (var property:String in getProperties(target)) {
+      var hGroup:HGroup = new HGroup;
+      hGroup.width = width - (PADDING * 2);
+      hGroup.height = LINE_HEIGHT;
+      group.addElement(hGroup);
+
+      var inputField:RichEditableText = buildInputField(property);
+      var label:Label = buildSpinnableLabel(inputField);
+      label.text = property;
+      label.percentWidth = 50;
+      label.percentHeight = 100;
+      hGroup.addElement(label);
+
+      inputField.percentWidth = 50;
+      inputField.percentHeight = 100;
+      inputField.text = target[property];
+      hGroup.addElement(inputField);
+
+      _targetProperties[property] = inputField;
+    }
+  }
+
+  private function destroyPropertyGroup():void {
+    var group:Scroller = _container.getChildByName("PropertyGroup") as Scroller;
+    if (group) {
+      _container.removeElement(group);
+    }
+    _targetProperties = {};
+  }
+
+  private function recreatePropertyGroup():void {
+    destroyPropertyGroup();
+    createPropertyGroup();
+  }
+
   private function drawTargetBorder():void {
     if (!target || _border) {
       return;
@@ -235,7 +310,7 @@ public class InspectorAS3 extends UIComponent {
     _border = new Sprite;
     parent.addChild(_border);
 
-    refreshBorder();
+    refreshTargetBorder();
   }
 
   private function clearTargetBorder():void {
@@ -246,7 +321,7 @@ public class InspectorAS3 extends UIComponent {
     _border = null;
   }
 
-  private function refreshBorder():void {
+  private function refreshTargetBorder():void {
     if (!target || !_border) {
       return;
     }
@@ -277,13 +352,12 @@ public class InspectorAS3 extends UIComponent {
     _border.graphics.endFill();
   }
 
-  private function resizeTargetBorder():void {
-    clearTargetBorder();
-    drawTargetBorder();
+  private function buildLabel():Label {
+    return new Label;
   }
 
   private function buildSpinnableLabel(inputField:RichEditableText):Label {
-    var label:Label = new Label;
+    var label:Label = buildLabel();
     var priority:int = 100;
 
     label.addEventListener(Event.ADDED_TO_STAGE, function(_event:Event):void {
@@ -310,18 +384,22 @@ public class InspectorAS3 extends UIComponent {
         event.stopImmediatePropagation();
 
         var movementX:Number = stage.mouseX - _spinnableMouseX;
-        inputField.text = (Number(inputField.text) + movementX).toString();
+        inputField.text = (Number(inputField.text) + (event.altKey ? movementX * 0.01 : movementX)).toString();
         _spinnableMouseX = stage.mouseX;
 
-        refreshFromInput();
+        var property:String = inputField.name;
+        target[property] = inputField.text;
+
+        refreshTargetBorder();
       }, true, priority);
     });
 
     return label;
   }
 
-  private function buildInputField():RichEditableText {
+  private function buildInputField(property:String):RichEditableText {
     var inputField:RichEditableText = new RichEditableText;
+    inputField.name = property;
     inputField.multiline = false;
     inputField.setStyle("color", 0x000000);
     inputField.setStyle("backgroundAlpha", 1);
@@ -329,10 +407,44 @@ public class InspectorAS3 extends UIComponent {
     inputField.setStyle("focusSkin", FocusSkin);
 
     inputField.addEventListener(TextOperationEvent.CHANGE, function(_event:Event):void {
-      refreshFromInput();
+      target[property] = inputField.text;
+      refreshTargetBorder();
     });
 
     return inputField;
+  }
+
+  private function hasDescendant(object:DisplayObject):Boolean {
+    var parent:DisplayObject = object;
+    do {
+      if (parent == this) {
+        return true;
+      }
+    } while (parent = parent.parent);
+    return false;
+  }
+
+  private function getProperties(target:DisplayObject):Vector.<String> {
+    var result:Vector.<String> = new <String>[];
+
+    var excepts:Array = ["name", "x", "y", "width", "height"];
+    var xml:XML = describeType(target);
+    var variables:XMLList = xml..accessor;
+
+    for each (var element:XML in variables) {
+      var property:String = element.@name;
+      var writable:Boolean = (element.@access.indexOf("write") != -1);
+      var readable:Boolean = (element.@access.indexOf("read") != -1);
+      var excepted:Boolean = (excepts.indexOf(property) != -1);
+      if (!writable || !readable || excepted) {
+        continue;
+      }
+      result.push(property);
+    }
+
+    result.sort(0);
+
+    return result;
   }
 
   private function onAddedToStage(_event:Event):void {
@@ -404,7 +516,7 @@ public class InspectorAS3 extends UIComponent {
   }
 
   private function onMouseMoveStage(event:MouseEvent):void {
-    if (!event.buttonDown || !target) {
+    if (!event.buttonDown || !target || hasDescendant(event.target as DisplayObject)) {
       return;
     }
 
